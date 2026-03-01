@@ -42,7 +42,7 @@
                             if (ext === 'pdf') {
                                 resolve({ id: Math.random(), name: file.name, type: 'inline', mimeType: 'application/pdf', data: event.target.result.split(',')[1] });
                             } else {
-                                resolve({ id: Math.random(), name: file.name, type: 'text', data: "附件已讀取：" + file.name });
+                                resolve({ id: Math.random(), name: file.name, type: 'text', data: "已讀取附件數據：" + file.name });
                             }
                         };
                         ext === 'pdf' ? reader.readAsDataURL(file) : reader.readAsText(file);
@@ -52,13 +52,13 @@
             };
 
             const handleGenerateSummary = async () => {
-                const apiKey = prompt("請貼入正確的 Gemini API Key:");
+                const apiKey = prompt("請貼入 Gemini API Key (請確保無前後空格):");
                 if (!apiKey) return;
                 setIsGenerating(true);
                 setSummary("");
 
                 try {
-                    // 修正關鍵：統一使用 v1beta 並精確指定模型代碼
+                    // 修復點：確保使用 v1beta 路徑對接 gemini-1.5-flash
                     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                     
                     const response = await fetch(url, {
@@ -66,18 +66,18 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             contents: [{ 
-                                parts: [{ text: `你是一位專業的藥廠特助。請將以下內容整理為正式公文：\n公司名稱：${companyName}\n會議主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
+                                parts: [{ text: `你是一位專業的藥廠特助。請根據以下 ${companyName} 的內容整理為正式公文式會議紀錄：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
                             }] 
                         })
                     });
 
                     const data = await response.json();
-                    if (data.error) throw new Error(data.error.message);
+                    if (data.error) throw new Error(`${data.error.message} (代碼: ${data.error.status})`);
                     
                     if (data.candidates && data.candidates[0].content) {
                         setSummary(data.candidates[0].content.parts[0].text);
                     } else {
-                        throw new Error("回傳結果異常，請確認 API Key 狀態。");
+                        throw new Error("API 未回傳內容，請檢查資料輸入是否足夠。");
                     }
                 } catch (e) {
                     alert("系統診斷回報：\n" + e.message);
@@ -86,7 +86,6 @@
                 }
             };
 
-            // 匯出 Word 功能
             const exportToWord = () => {
                 if (!summary) return;
                 const htmlContent = marked.parse(summary);
@@ -94,13 +93,13 @@
                     <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
                     <head><meta charset='utf-8'><style>
                         body { font-family: "標楷體", serif; }
-                        .header { text-align: center; color: red; font-size: 20pt; font-weight: bold; }
-                        table { border-collapse: collapse; width: 100%; }
-                        th, td { border: 1px solid black; padding: 8px; }
+                        .official-header { text-align: center; color: red; font-size: 24pt; font-weight: bold; }
+                        table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
+                        th, td { border: 1px solid black; padding: 8pt; font-size: 11pt; }
                     </style></head>
                     <body>
-                        <div class="header">${companyName}</div>
-                        <h2 style="text-align:center">會議紀錄</h2>
+                        <div class="official-header">${companyName}</div>
+                        <h2 style="text-align:center">會議紀錄簽報</h2>
                         <p>日期：${date}</p>
                         <div>${htmlContent}</div>
                     </body></html>`;
@@ -115,14 +114,14 @@
                 <div className="max-w-7xl mx-auto p-4 md:p-8">
                     <header className="mb-8 text-center text-blue-900">
                         <h1 className="text-3xl font-bold">藥事會議紀錄彙整系統 v2.0</h1>
-                        <p className="text-slate-500 mt-2">生達化學製藥 • 專業彙整系統</p>
+                        <p className="text-slate-500 mt-2">生達化學製藥專用版本</p>
                     </header>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         <aside className="lg:col-span-5 space-y-6">
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                                 <label className="block text-sm font-bold mb-1">發文單位</label>
-                                <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded mb-4 focus:ring-2 focus:ring-blue-500" />
+                                <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded mb-4" />
                                 <label className="block text-sm font-bold mb-1">會議主題</label>
                                 <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="如：營二月中會" className="w-full p-2 border rounded" />
                             </div>
@@ -130,20 +129,22 @@
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                                     <h2 className="font-bold text-slate-800">業務報告與附件</h2>
-                                    <button onClick={() => setReports([...reports, { id: Date.now(), name: "", content: "", files: [] }])} className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">+ 新增人員</button>
+                                    <button onClick={() => setReports([...reports, { id: Date.now(), name: "", content: "", files: [] }])} className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100">+ 新增人員</button>
                                 </div>
                                 <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
                                     {reports.map(r => (
-                                        <div key={r.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                            <input placeholder="業務姓名" value={r.name} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} className="w-full mb-2 p-1.5 text-sm border rounded bg-white focus:ring-1 focus:ring-blue-500" />
+                                        <div key={r.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4 shadow-sm">
+                                            <input placeholder="業務姓名" value={r.name} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} className="w-full mb-2 p-1.5 text-sm border rounded bg-white" />
+                                            
                                             <div className="mb-2">
-                                                <label className="inline-block bg-white border border-slate-300 text-[10px] px-2 py-1 rounded cursor-pointer hover:bg-slate-50">
+                                                <label className="inline-block bg-white border border-slate-300 text-[10px] px-2 py-1 rounded cursor-pointer hover:bg-slate-50 transition">
                                                     📎 上傳附件 (PDF/Excel)
                                                     <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, r.id)} />
                                                 </label>
                                                 <span className="text-[10px] text-slate-400 ml-2">{(r.files || []).length} 個檔案</span>
                                             </div>
-                                            <textarea placeholder="補充內容..." value={r.content} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} className="w-full h-20 p-2 text-xs border rounded bg-white resize-none focus:ring-1 focus:ring-blue-500" />
+
+                                            <textarea placeholder="報告補充內容..." value={r.content} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} className="w-full h-20 p-2 text-xs border rounded bg-white resize-none" />
                                         </div>
                                     ))}
                                 </div>
@@ -158,11 +159,11 @@
                             <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                                 <span className="font-bold text-slate-700">公文預覽區</span>
                                 <button onClick={exportToWord} disabled={!summary} className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded disabled:opacity-50">
-                                    匯出 Word 檔
+                                    匯出正式 Word 檔
                                 </button>
                             </div>
                             <div className="flex-1 overflow-y-auto p-8 no-scrollbar bg-white">
-                                {summary ? <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(summary) }} /> : <div className="text-slate-300 text-center mt-20 italic">等待數據輸入並點擊產生...</div>}
+                                {summary ? <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(summary) }} /> : <div className="text-slate-300 text-center mt-20 italic">等待數據輸入並執行...</div>}
                             </div>
                         </main>
                     </div>
