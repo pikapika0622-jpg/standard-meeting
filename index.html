@@ -32,6 +32,7 @@
             const [summary, setSummary] = useState("");
             const [isGenerating, setIsGenerating] = useState(false);
 
+            // 處理檔案上傳
             const handleFileUpload = async (e, reportId) => {
                 const files = Array.from(e.target.files);
                 const processedFiles = await Promise.all(files.map(async file => {
@@ -52,20 +53,21 @@
             };
 
             const handleGenerateSummary = async () => {
-                const apiKey = prompt("請貼入 Gemini API Key (請確保無空格):");
+                const apiKey = prompt("請貼入 Gemini API Key (確保無前後空格):");
                 if (!apiKey) return;
                 setIsGenerating(true);
                 setSummary("");
 
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                    // 修正關鍵：改用正式版路徑與精確的模型名稱
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                     
                     const response = await fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             contents: [{ 
-                                parts: [{ text: `你是一位藥廠特助。請根據以下 ${companyName} 的內容整理為一份正式公文：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
+                                parts: [{ text: `你是一位專業的藥廠特助。請將以下 ${companyName} 的會議內容整理為一份正式公文：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
                             }] 
                         })
                     });
@@ -76,7 +78,7 @@
                     if (data.candidates && data.candidates[0].content) {
                         setSummary(data.candidates[0].content.parts[0].text);
                     } else {
-                        throw new Error("回傳內容異常，請稍後再試。");
+                        throw new Error("API 回傳結果為空，請確認輸入資訊是否足夠。");
                     }
                 } catch (e) {
                     alert("系統診斷回報：\n" + e.message);
@@ -89,7 +91,7 @@
                 <div className="max-w-7xl mx-auto p-4 md:p-8">
                     <header className="mb-8 text-center text-blue-900">
                         <h1 className="text-3xl font-bold">藥事會議紀錄彙整系統 v2.0</h1>
-                        <p className="text-slate-500 mt-2">生達化學製藥專用版本</p>
+                        <p className="text-slate-500 mt-2">生達化學製藥 • 專用公文排版系統</p>
                     </header>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
