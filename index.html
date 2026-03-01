@@ -58,7 +58,7 @@
                 setSummary("");
 
                 try {
-                    // 使用最穩定的路徑架構
+                    // 修正關鍵：使用 v1beta 路徑對接 gemini-1.5-flash
                     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                     
                     const response = await fetch(url, {
@@ -66,7 +66,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             contents: [{ 
-                                parts: [{ text: `你是一位專業的藥廠特助。請根據以下內容整理為正式公文：\n公司：${companyName}\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
+                                parts: [{ text: `你是一位專業的藥廠特助。請將以下內容整理為正式公文：\n公司：${companyName}\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
                             }] 
                         })
                     });
@@ -77,7 +77,7 @@
                     if (data.candidates && data.candidates[0].content) {
                         setSummary(data.candidates[0].content.parts[0].text);
                     } else {
-                        throw new Error("API 回傳結果異常，請確認 API Key 權限或輸入內容。");
+                        throw new Error("回傳結果異常，請確認 API Key 權限或輸入內容。");
                     }
                 } catch (e) {
                     alert("系統診斷回報：\n" + e.message);
