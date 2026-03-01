@@ -1,40 +1,118 @@
-/* 請在 index.html 找到 handleGenerateSummary 並替換 */
-const handleGenerateSummary = async () => {
-    const apiKey = prompt("請輸入 Gemini API Key:");
-    if (!apiKey) return;
-    setIsGenerating(true);
-    setSummary(""); // 清空舊內容
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生達藥事會議紀錄系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background-color: #f8fafc; }
+        .markdown-body { line-height: 1.8; color: #334155; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: white; }
+        .markdown-body th, .markdown-body td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-    try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                contents: [{ 
-                    parts: [{ 
-                        text: `你是一位專業的藥廠特助。請將以下 ${companyName} 的會議內容整理為一份正式公文：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` 
-                    }] 
-                }] 
-            })
-        });
+        const App = () => {
+            const [theme, setTheme] = useState("");
+            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+            const [companyName, setCompanyName] = useState("Standard Chem & Pharm Co., Ltd.");
+            const [reports, setReports] = useState([{ id: Date.now(), name: "", content: "", files: [] }]);
+            const [summary, setSummary] = useState("");
+            const [isGenerating, setIsGenerating] = useState(false);
 
-        const data = await response.json();
+            const handleGenerateSummary = async () => {
+                const apiKey = prompt("請貼入您的 Gemini API Key:");
+                if (!apiKey) return;
+                setIsGenerating(true);
+                setSummary("");
 
-        // 診斷邏輯：如果 API 有報錯，直接顯示原因
-        if (data.error) {
-            throw new Error(`API 錯誤：${data.error.message} (代碼: ${data.error.status})`);
-        }
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            contents: [{ 
+                                parts: [{ text: `你是一位專業的藥廠特助。請將以下 ${companyName} 的會議內容整理為一份正式公文：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
+                            }] 
+                        })
+                    });
 
-        if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-            setSummary(data.candidates[0].content.parts[0].text);
-        } else {
-            throw new Error("AI 回傳了空內容，請檢查輸入的資訊是否過少。");
-        }
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error.message);
+                    
+                    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        setSummary(data.candidates[0].content.parts[0].text);
+                    } else {
+                        throw new Error("回傳內容為空，請確認 API Key 是否有效。");
+                    }
+                } catch (e) {
+                    alert("API 診斷錯誤：\n" + e.message);
+                } finally {
+                    setIsGenerating(false);
+                }
+            };
 
-    } catch (e) { 
-        alert("系統診斷回報：\n" + e.message); 
-        console.error(e);
-    } finally { 
-        setIsGenerating(false); 
-    }
-};
+            return (
+                <div className="max-w-7xl mx-auto p-4 md:p-8">
+                    <header className="mb-8 text-center text-blue-900">
+                        <h1 className="text-3xl font-bold">藥事會議紀錄彙整系統 v2.0</h1>
+                        <p className="text-slate-500 mt-2">生達化學製藥 • 專用公文排版系統</p>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <aside className="lg:col-span-5 space-y-6">
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <label className="block text-sm font-bold mb-1">發文單位</label>
+                                <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded mb-4 focus:ring-2 focus:ring-blue-500" />
+                                <label className="block text-sm font-bold mb-1">會議主題</label>
+                                <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="如：Q1業績檢討" className="w-full p-2 border rounded" />
+                            </div>
+
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="font-bold">業務報告與附件</h2>
+                                    <button onClick={() => setReports([...reports, { id: Date.now(), name: "", content: "", files: [] }])} className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">+ 新增人員</button>
+                                </div>
+                                <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
+                                    {reports.map(r => (
+                                        <div key={r.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                            <input placeholder="業務姓名" value={r.name} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} className="w-full mb-2 p-1 text-sm border rounded" />
+                                            <textarea placeholder="報告補充內容..." value={r.content} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} className="w-full h-20 p-2 text-xs border rounded resize-none" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <button onClick={handleGenerateSummary} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition">
+                                {isGenerating ? "AI 處理中..." : "產生公文級會議紀錄"}
+                            </button>
+                        </aside>
+
+                        <main className="lg:col-span-7 bg-white rounded-2xl shadow-lg border border-slate-200 flex flex-col h-[600px]">
+                            <div className="p-4 border-b bg-slate-50 font-bold">公文預覽區</div>
+                            <div className="flex-1 overflow-y-auto p-8">
+                                {summary ? <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(summary) }} /> : <div className="text-slate-300 text-center mt-20 italic">等待數據輸入並執行...</div>}
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
