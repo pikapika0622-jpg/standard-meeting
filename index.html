@@ -22,7 +22,7 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState } = React;
 
         const App = () => {
             const [theme, setTheme] = useState("");
@@ -32,7 +32,6 @@
             const [summary, setSummary] = useState("");
             const [isGenerating, setIsGenerating] = useState(false);
 
-            // 補回檔案上傳處理邏輯
             const handleFileUpload = async (e, reportId) => {
                 const files = Array.from(e.target.files);
                 const processedFiles = await Promise.all(files.map(async file => {
@@ -49,22 +48,25 @@
                         ext === 'pdf' ? reader.readAsDataURL(file) : reader.readAsText(file);
                     });
                 }));
-                setReports(reports.map(r => r.id === reportId ? {...r, files: [...r.files, ...processedFiles]} : r));
+                setReports(reports.map(r => r.id === reportId ? {...r, files: [...(r.files || []), ...processedFiles]} : r));
             };
 
             const handleGenerateSummary = async () => {
-                const apiKey = prompt("請貼入您的 Gemini API Key:");
+                const apiKey = prompt("請貼入 Gemini API Key (請確保無空格):");
                 if (!apiKey) return;
                 setIsGenerating(true);
                 setSummary("");
 
                 try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    // 修正關鍵：改用 v1 路徑並確保參數正確
+                    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                    
+                    const response = await fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             contents: [{ 
-                                parts: [{ text: `你是一位專業的藥廠特助。請將以下 ${companyName} 的會議內容整理為一份正式公文：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
+                                parts: [{ text: `你是一位藥廠特助。請根據以下 ${companyName} 的內容整理為一份正式公文：\n主題：${theme}\n日期：${date}\n內容詳情：${JSON.stringify(reports)}` }] 
                             }] 
                         })
                     });
@@ -72,13 +74,13 @@
                     const data = await response.json();
                     if (data.error) throw new Error(data.error.message);
                     
-                    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    if (data.candidates && data.candidates[0].content) {
                         setSummary(data.candidates[0].content.parts[0].text);
                     } else {
-                        throw new Error("回傳內容為空，請確認資訊是否足夠。");
+                        throw new Error("回傳內容異常，請稍後再試。");
                     }
                 } catch (e) {
-                    alert("系統診斷錯誤：\n" + e.message);
+                    alert("系統診斷回報：\n" + e.message);
                 } finally {
                     setIsGenerating(false);
                 }
@@ -88,61 +90,13 @@
                 <div className="max-w-7xl mx-auto p-4 md:p-8">
                     <header className="mb-8 text-center text-blue-900">
                         <h1 className="text-3xl font-bold">藥事會議紀錄彙整系統 v2.0</h1>
-                        <p className="text-slate-500 mt-2">生達化學製藥 • 專用公文排版系統</p>
+                        <p className="text-slate-500 mt-2">生達化學製藥專用版本</p>
                     </header>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         <aside className="lg:col-span-5 space-y-6">
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                                 <label className="block text-sm font-bold mb-1">發文單位</label>
-                                <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded mb-4" />
+                                <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded mb-4 focus:ring-2 focus:ring-blue-500 outline-none" />
                                 <label className="block text-sm font-bold mb-1">會議主題</label>
-                                <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="如：營二月中會" className="w-full p-2 border rounded" />
-                            </div>
-
-                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="font-bold">業務報告與附件</h2>
-                                    <button onClick={() => setReports([...reports, { id: Date.now(), name: "", content: "", files: [] }])} className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">+ 新增人員</button>
-                                </div>
-                                <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
-                                    {reports.map(r => (
-                                        <div key={r.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4">
-                                            <input placeholder="業務姓名" value={r.name} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} className="w-full mb-2 p-1 text-sm border rounded bg-white" />
-                                            
-                                            {/* 補回檔案上傳按鈕 */}
-                                            <div className="mb-2">
-                                                <label className="inline-block bg-white border border-slate-300 text-[10px] px-2 py-1 rounded cursor-pointer hover:bg-slate-50">
-                                                    📎 上傳附件 (PDF/Excel)
-                                                    <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, r.id)} />
-                                                </label>
-                                                <span className="text-[10px] text-slate-400 ml-2">{r.files?.length || 0} 個檔案</span>
-                                            </div>
-
-                                            <textarea placeholder="報告補充內容..." value={r.content} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} className="w-full h-20 p-2 text-xs border rounded bg-white resize-none" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <button onClick={handleGenerateSummary} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition">
-                                {isGenerating ? "AI 處理中..." : "產生公文級會議紀錄"}
-                            </button>
-                        </aside>
-
-                        <main className="lg:col-span-7 bg-white rounded-2xl shadow-lg border border-slate-200 flex flex-col h-[600px]">
-                            <div className="p-4 border-b bg-slate-50 font-bold text-slate-700">公文預覽區</div>
-                            <div className="flex-1 overflow-y-auto p-8">
-                                {summary ? <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(summary) }} /> : <div className="text-slate-300 text-center mt-20 italic">等待數據輸入並執行...</div>}
-                            </div>
-                        </main>
-                    </div>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                                <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="如：營二月中會
