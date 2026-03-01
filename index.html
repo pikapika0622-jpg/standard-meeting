@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>生達會議紀錄助手 - 附件功能回歸版</title>
+    <title>生達會議紀錄助手 - Word 匯出版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -23,132 +23,118 @@
             const [location, setLocation] = useState("北區辦事處");
             const [attendees, setAttendees] = useState("");
             const [theme, setTheme] = useState("");
-            const [reports, setReports] = useState([{ id: Date.now(), name: "", content: "", files: [] }]);
+            const [reports, setReports] = useState([{ id: Date.now(), group: "", name: "", content: "", files: [] }]);
 
-            // 處理檔案選擇與記錄檔案名稱
             const handleFileChange = (e, reportId) => {
                 const fileNames = Array.from(e.target.files).map(f => f.name);
                 setReports(reports.map(r => r.id === reportId ? {...r, files: [...(r.files || []), ...fileNames]} : r));
             };
 
             const handleCopyPrompt = () => {
-                if (!theme || !attendees) {
-                    alert("請填寫會議主題與與會人員！");
-                    return;
-                }
-
                 const dataString = reports.map(r => 
-                    `【報告人：${r.name}】\n報告細節：${r.content}\n附件清單：${r.files?.length > 0 ? r.files.join(', ') : '無'}`
+                    `【組別：${r.group} | 業務：${r.name}】\n報告內容：${r.content}`
                 ).join('\n\n');
                 
-                const fullPrompt = `你是一位專業的藥廠特助。請根據以下資料，為 Standard Chem & Pharm Co., Ltd. (生達化學製藥) 撰寫一份符合正式規範的會議紀錄。
+                const fullPrompt = `你是一位專業的藥廠特助。請根據以下資料，為 Standard Chem & Pharm Co., Ltd. (生達化學製藥) 撰寫一份「正式公文格式」的會議紀錄。
 
-【基本資訊】
-會議日期：${date}
-會議地點：${location}
-與會人員：${attendees}
-會議主題：
-${theme}
+【基本參數】
+日期：${date} | 地點：${location} | 與會人員：${attendees}
+主題：${theme}
 
-【詳細報告內容與附件摘要】
+【原始數據內容】
 ${dataString}
 
-【撰寫要求】
-1. 請產出具備「正式公文感」的會議紀錄。
-2. 必須包含：發文字號、速別（最速件）、密等（普通）。
-3. 內容需有：會議概述、業務執行概況表（請用 Markdown 表格呈現數據與進度）、決議事項、待辦清單。
-4. 格式需專業，針對藥廠業務專用術語（如：Bistin/Qgivri/Fulphila 進藥追蹤、增量分析）進行精確彙整。`;
+【撰寫格式嚴格要求】
+一、 內文階層樣式：請嚴格遵守 一、(一) 1. (1.) 之順序。
+二、 會議內容彙整表格：請將所有業務報告內容彙整成一個 Markdown 表格，欄位必須包含：| 組別 | 業務名 | 藥品名 (如 Ogivri/Fulphila/Bistin) | 醫院名稱 | 進藥追蹤/增量分析進度 |。
+三、 專業屬性：
+    1. 包含：發文字號、速別（最速件）、密等（普通）。
+    2. 內容：會議概述、上述之彙整表格、決議事項、待辦清單。
+    3. 用語：須莊重專業，精確彙整藥廠業務專用術語。`;
 
                 navigator.clipboard.writeText(fullPrompt).then(() => {
-                    alert("✅ 會議資料已打包！\n請直接至 Gemini 貼上，AI 將根據內容與附件產出正式公文。");
+                    alert("✅ 會議資料已打包！\n請至 Gemini 貼上，產出後將內容貼回右側即可匯出 Word。");
                 });
             };
 
+            const [aiResult, setAiResult] = useState("");
+
+            const exportToWord = () => {
+                const docTemplate = `
+                    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                    <head><meta charset='utf-8'><style>
+                        body { font-family: "標楷體", serif; padding: 20pt; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid black; padding: 5pt; font-size: 11pt; }
+                        h1 { text-align: center; color: red; font-size: 24pt; }
+                    </style></head>
+                    <body>
+                        <h1>Standard Chem & Pharm Co., Ltd.</h1>
+                        <h2 style="text-align:center">會議紀錄簽報</h2>
+                        <p>日期：${date} | 地點：${location}</p>
+                        <p>與會人員：${attendees}</p>
+                        <hr>
+                        <div>${aiResult.replace(/\n/g, '<br>')}</div>
+                    </body></html>`;
+                const blob = new Blob([docTemplate], { type: 'application/msword' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `生達會議紀錄_${theme}.doc`;
+                link.click();
+            };
+
             return (
-                <div className="max-w-4xl mx-auto p-6 md:py-12">
-                    <header className="mb-10 text-center">
-                        <h1 className="text-3xl font-extrabold text-blue-900 italic">Standard Chem 會議紀錄彙整</h1>
-                        <p className="text-slate-500 mt-2 font-medium underline">114 年正式會議範本格式 (v2.2)</p>
+                <div className="max-w-6xl mx-auto p-4 md:py-10">
+                    <header className="mb-8 text-center">
+                        <h1 className="text-3xl font-black text-blue-900 italic">Standard Chem 會議紀錄彙整系統</h1>
+                        <p className="text-slate-500 mt-2 font-bold">Word 匯出 & 階層格式優化版 (v2.4)</p>
                     </header>
 
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 space-y-6">
-                        {/* 第一列：日期與地點 */}
-                        <section className="grid grid-cols-1 md:grid-cols-2 gap-6 border-b pb-6">
-                            <div>
-                                <label className="block text-sm font-black text-slate-700 mb-2">📅 會議日期</label>
-                                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* 左側輸入區 */}
+                        <div className="bg-white rounded-3xl shadow-xl p-6 space-y-4 border border-slate-200">
+                            <div className="grid grid-cols-2 gap-4">
+                                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-2 border rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
+                                <input value={location} onChange={e => setLocation(e.target.value)} placeholder="會議地點" className="p-2 border rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
-                            <div>
-                                <label className="block text-sm font-black text-slate-700 mb-2">📍 會議地點</label>
-                                <input value={location} onChange={e => setLocation(e.target.value)} placeholder="如：北區辦事處" className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
-                            </div>
-                        </section>
-
-                        {/* 第二列：與會人員 */}
-                        <section className="border-b pb-6">
-                            <label className="block text-sm font-black text-slate-700 mb-2">👥 與會人員</label>
-                            <input value={attendees} onChange={e => setAttendees(e.target.value)} placeholder="王煌傑、許兆欽、李建賢..." className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" />
-                        </section>
-
-                        {/* 第三列：會議主題 */}
-                        <section className="border-b pb-6">
-                            <label className="block text-sm font-black text-slate-700 mb-2">📝 會議主題</label>
-                            <textarea value={theme} onChange={e => setTheme(e.target.value)} placeholder="1. 114年進藥進度追蹤&#10;2. 114年增量進度分析..." className="w-full h-24 p-3 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-                        </section>
-
-                        {/* 業務報告細項 */}
-                        <section className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h2 className="font-black text-slate-800 text-lg underline decoration-blue-500">報告人細項與附件</h2>
-                                <button onClick={() => setReports([...reports, { id: Date.now(), name: "", content: "", files: [] }])} className="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-full font-bold hover:bg-blue-200 transition">+ 新增報告人</button>
-                            </div>
+                            <input value={attendees} onChange={e => setAttendees(e.target.value)} placeholder="與會人員 (王煌傑、許兆欽...)" className="w-full p-2 border rounded-lg bg-slate-50 outline-none" />
+                            <textarea value={theme} onChange={e => setTheme(e.target.value)} placeholder="會議主題 (1. 114年進藥追蹤...)" className="w-full h-20 p-2 border rounded-lg bg-white outline-none resize-none" />
                             
-                            <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 no-scrollbar">
-                                {reports.map((r) => (
-                                    <div key={r.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 relative shadow-sm">
-                                        <input 
-                                            placeholder="報告人姓名 (如: 經宜珮)" 
-                                            value={r.name} 
-                                            onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} 
-                                            className="w-full mb-3 p-2 text-sm font-bold border-b bg-transparent border-slate-300 focus:border-blue-500 outline-none text-blue-800" 
-                                        />
-                                        
-                                        {/* 重新補上的上傳檔案按鈕 */}
-                                        <div className="mb-3 flex items-center gap-2">
-                                            <label className="bg-white border border-slate-300 text-[11px] px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-100 transition shadow-sm font-bold text-slate-600">
-                                                📁 選擇檔案 (PDF/Excel)
-                                                <input type="file" className="hidden" multiple onChange={(e) => handleFileChange(e, r.id)} />
-                                            </label>
-                                            <span className="text-[10px] text-blue-500 font-medium italic">
-                                                {r.files?.length > 0 ? `${r.files.length} 個附件: ${r.files[0].substring(0,10)}...` : "尚未選擇檔案"}
-                                            </span>
-                                        </div>
+                            <div className="flex justify-between items-center border-t pt-4">
+                                <h2 className="font-black text-slate-800">業務報告數據彙整</h2>
+                                <button onClick={() => setReports([...reports, { id: Date.now(), group: "", name: "", content: "", files: [] }])} className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">+ 新增人員</button>
+                            </div>
 
-                                        <textarea 
-                                            placeholder="請輸入會議重點或藥品推廣進度..." 
-                                            value={r.content} 
-                                            onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} 
-                                            className="w-full h-32 p-3 text-sm bg-white rounded-xl border border-slate-200 resize-none focus:ring-1 focus:ring-blue-400 outline-none" 
-                                        />
-                                        {reports.length > 1 && (
-                                            <button onClick={() => setReports(reports.filter(rep => rep.id !== r.id))} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition">✕</button>
-                                        )}
+                            <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 no-scrollbar">
+                                {reports.map((r) => (
+                                    <div key={r.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 relative">
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
+                                            <input placeholder="組別 (如: 營二部)" value={r.group} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, group: e.target.value} : rep))} className="p-1.5 text-xs border rounded bg-white" />
+                                            <input placeholder="業務姓名" value={r.name} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} className="p-1.5 text-xs border rounded bg-white font-bold" />
+                                        </div>
+                                        <textarea placeholder="報告細節 (包含藥品名、醫院名、進度...)" value={r.content} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} className="w-full h-20 p-2 text-xs border rounded bg-white resize-none" />
+                                        {reports.length > 1 && <button onClick={() => setReports(reports.filter(rep => rep.id !== r.id))} className="absolute top-2 right-2 text-slate-300 hover:text-red-500">✕</button>}
                                     </div>
                                 ))}
                             </div>
-                        </section>
 
-                        <button 
-                            onClick={handleCopyPrompt}
-                            className="w-full py-5 bg-gradient-to-br from-blue-900 to-blue-700 text-white font-black text-xl rounded-2xl shadow-xl hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-3 border-4 border-white/20"
-                        >
-                            <span>🚀 打包並複製 AI 指令</span>
-                        </button>
+                            <button onClick={handleCopyPrompt} className="w-full py-4 bg-blue-800 text-white font-black rounded-xl shadow-lg hover:bg-blue-900 transition flex items-center justify-center gap-2">🚀 打包複製 AI 指令</button>
+                        </div>
+
+                        {/* 右側 Word 匯出區 */}
+                        <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-200 flex flex-col h-[650px]">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="font-black text-slate-800 italic">Word 產出預覽</h2>
+                                <button onClick={exportToWord} disabled={!aiResult} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-md disabled:opacity-50">一鍵產出 Word 文檔</button>
+                            </div>
+                            <textarea 
+                                value={aiResult} 
+                                onChange={e => setAiResult(e.target.value)} 
+                                placeholder="請將 Gemini 產出的公文內容貼到這裡，然後點擊上方按鈕匯出 Word..." 
+                                className="flex-1 w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 text-sm focus:border-blue-300 outline-none resize-none shadow-inner"
+                            />
+                        </div>
                     </div>
-
-                    <footer className="mt-8 text-center text-slate-400 text-xs italic">
-                        生達化學製藥 - 營二部會議彙整工具 (免 API 穩定版)
-                    </footer>
                 </div>
             );
         };
