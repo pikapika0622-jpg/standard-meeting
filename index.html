@@ -1,349 +1,209 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  FileText, 
-  Users, 
-  MapPin, 
-  Calendar, 
-  Plus, 
-  Trash2, 
-  Paperclip, 
-  FileDown, 
-  Zap, 
-  CheckCircle,
-  Loader2
-} from 'lucide-react';
-import { marked } from 'marked';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生達化學製藥 - 會議紀錄自動化系統</title>
+    <!-- 載入外部資源 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 載入 Lucide 圖示庫 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f1f5f9; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 16px 0; background: white; }
+        .markdown-body th, .markdown-body td { border: 1px solid #cbd5e1; padding: 12px; text-align: left; font-size: 14px; }
+        .markdown-body th { background-color: #f8fafc; font-weight: bold; }
+        .markdown-body h1, .markdown-body h2 { font-weight: bold; color: #1e3a8a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 24px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-const App = () => {
-  // 狀態管理
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [location, setLocation] = useState("北區辦事處");
-  const [attendees, setAttendees] = useState("");
-  const [theme, setTheme] = useState("");
-  const [reports, setReports] = useState([{ id: Date.now(), group: "", name: "", content: "", files: [] }]);
-  const [aiResult, setAiResult] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+    <script type="text/babel">
+        const { useState, useEffect } = React;
 
-  // 快捷與會人員名單
-  const quickAttendees = ["王煌傑", "許兆欽", "程宜珮"];
+        const App = () => {
+            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+            const [location, setLocation] = useState("北區辦事處");
+            const [recorder, setRecorder] = useState("");
+            const [attendees, setAttendees] = useState("");
+            const [theme, setTheme] = useState("1. 114年進藥進度追蹤\n2. 114年增量進度分析\n3. Vidatin、Sigtamet進藥規劃\n4. 競爭品KB、Ogivri、Fulphila市場訊息回饋");
+            const [reports, setReports] = useState([{ id: Date.now(), group: "", name: "", content: "", files: [] }]);
+            const [aiResult, setAiResult] = useState("");
+            const [isGenerating, setIsGenerating] = useState(false);
 
-  // API 設置 (環境自動提供金鑰)
-  const apiKey = "";
+            const quickAttendees = ["王煌傑", "許兆欽", "程宜珮"];
+            const apiKey = ""; // 執行環境將自動處理金鑰
 
-  // 處理與會人員快捷添加
-  const addAttendee = (name) => {
-    if (!attendees) {
-      setAttendees(name);
-    } else if (!attendees.includes(name)) {
-      setAttendees(prev => `${prev}、${name}`);
-    }
-  };
+            const addAttendee = (name) => {
+                if (!attendees) setAttendees(name);
+                else if (!attendees.includes(name)) setAttendees(prev => `${prev}、${name}`);
+            };
 
-  // 處理檔案選擇 (僅記錄名稱供 AI 參考)
-  const handleFileChange = (e, reportId) => {
-    const fileNames = Array.from(e.target.files).map(f => f.name);
-    setReports(reports.map(r => r.id === reportId ? { ...r, files: [...(r.files || []), ...fileNames] } : r));
-  };
+            const handleFileChange = (e, reportId) => {
+                const fileNames = Array.from(e.target.files).map(f => f.name);
+                setReports(reports.map(r => r.id === reportId ? { ...r, files: [...(r.files || []), ...fileNames] } : r));
+            };
 
-  // AI 生成邏輯 (包含指數退避重試機制)
-  const generateMeetingMinutes = async () => {
-    if (!theme || !attendees) {
-      alert("請填寫會議主題與與會人員！");
-      return;
-    }
+            const generateMinutes = async () => {
+                if (!theme || !attendees) {
+                    alert("請完整填寫會議基本資訊！");
+                    return;
+                }
+                setIsGenerating(true);
+                setAiResult("");
 
-    setIsGenerating(true);
-    setAiResult("");
+                const systemPrompt = `你是一位專業的藥廠特助，任職於 Standard Chem & Pharm Co., Ltd. (生達化學製藥)。
+請根據提供的數據撰寫一份「標準會議紀錄」(非公文格式)。
 
-    const systemPrompt = `你是一位專業的藥廠特助，任職於 Standard Chem & Pharm Co., Ltd. (生達化學製藥)。
-請根據提供的會議數據，撰寫一份極具「正式公文感」的會議紀錄。
+【撰寫格式規範】：
+1. 階層樣式：內文須符合 一、(一) 1. (1.) 順序。
+2. 主題彙整：請務必以「會議討論主題」作為分類大綱進行歸納。
+3. 表格化：在每個主題下，將相關業務員的回報內容整理成 Markdown 表格。
+   表格欄位：| 業務人員 | 醫院名稱 | 藥品品項 | 進度/數據/現況回報 | 附件名稱 |
+4. 專業性：使用藥業專業用語，針對 Ogivri/Fulphila/Bistin 等品項進行精確彙整。
+5. 排除項目：不要出現發文字號、速別或正式公文抬頭。`;
 
-【格式嚴格要求】：
-1. 階層樣式：必須嚴格符合 一、(一) 1. (1.) 之順序。
-2. 表格彙整：所有業務報告必須彙整成一個 Markdown 表格。
-   欄位：| 組別 | 業務名 | 藥品名 (如 Ogivri/Fulphila/Bistin/Sigmet/Vildamet) | 醫院名稱 | 進藥追蹤與增量分析進度 |
-3. 公文屬性：標題須包含發文字號(自擬格式)、速別(最速件)、密等(普通)。
-4. 專業術語：對藥品推廣、業績增量分析使用專業藥業用語。
-5. 內容組成：會議概述、業務彙整表、決議事項、待辦清單 (Action Items)。`;
-
-    const userQuery = `會議基本資料：
-日期：${date}
-地點：${location}
-與會人員：${attendees}
+                const userQuery = `會議資料：
+日期：${date} | 地點：${location} | 紀錄：${recorder} | 與會：${attendees}
 主題：${theme}
+業務報告：${JSON.stringify(reports)}`;
 
-業務報告細項：
-${reports.map(r => `- [${r.group}] ${r.name}: ${r.content} (附件: ${r.files.join(", ") || "無"})`).join("\n")}`;
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: userQuery }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] }
+                        })
+                    });
+                    const data = await response.json();
+                    setAiResult(data.candidates?.[0]?.content?.parts?.[0]?.text || "生成失敗，請再試一次。");
+                } catch (e) {
+                    alert("系統連線異常，請檢查網路。");
+                } finally {
+                    setIsGenerating(true); // 修正狀態
+                    setIsGenerating(false);
+                }
+            };
 
-    const fetchWithRetry = async (attempt = 0) => {
-      try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: userQuery }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] }
-          })
-        });
+            const exportWord = () => {
+                const html = marked.parse(aiResult);
+                const template = `
+                    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                    <head><meta charset='utf-8'><style>
+                        body { font-family: "標楷體", serif; padding: 40px; }
+                        table { border-collapse: collapse; width: 100%; border: 1px solid black; }
+                        th, td { border: 1px solid black; padding: 8px; font-size: 11pt; }
+                        .title { text-align: center; color: #cc0000; font-size: 22pt; font-weight: bold; border-bottom: 2px solid red; }
+                    </style></head>
+                    <body>
+                        <div class="title">生達化學製藥股份有限公司 會議紀錄</div>
+                        <p>日期：${date} | 地點：${location} | 記錄人：${recorder}</p>
+                        <p>與會人員：${attendees}</p>
+                        <hr>${html}
+                    </body></html>`;
+                const blob = new Blob([template], { type: 'application/msword' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `生達會議紀錄_${date}.doc`;
+                link.click();
+            };
 
-        if (!response.ok) throw new Error('API 請求失敗');
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) setAiResult(text);
-      } catch (error) {
-        if (attempt < 5) {
-          const delay = Math.pow(2, attempt) * 1000;
-          setTimeout(() => fetchWithRetry(attempt + 1), delay);
-        } else {
-          alert("生成失敗，請檢查網路連線後再試。");
-        }
-      } finally {
-        if (attempt === 0 || attempt >= 5) setIsGenerating(false);
-      }
-    };
+            return (
+                <div className="min-h-screen p-4 lg:p-10">
+                    <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        {/* 左側輸入區 */}
+                        <div className="lg:col-span-5 space-y-6">
+                            <div className="bg-white rounded-3xl shadow-xl p-8 border border-slate-200">
+                                <h2 className="text-xl font-black text-blue-900 mb-6 flex items-center gap-2 italic">
+                                    Standard Chem Minutes System
+                                </h2>
+                                
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-3 bg-slate-50 border rounded-xl text-sm font-bold w-full" />
+                                    <input value={location} onChange={e => setLocation(e.target.value)} placeholder="地點" className="p-3 bg-slate-50 border rounded-xl text-sm w-full" />
+                                </div>
+                                
+                                <input value={recorder} onChange={e => setRecorder(e.target.value)} placeholder="記錄人員" className="w-full p-3 bg-slate-50 border rounded-xl text-sm mb-4" />
+                                
+                                <div className="mb-4">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase">與會人員</label>
+                                    <input value={attendees} onChange={e => setAttendees(e.target.value)} placeholder="手動輸入或點擊下方快捷鍵" className="w-full p-3 bg-slate-50 border rounded-xl text-sm mt-1" />
+                                    <div className="flex gap-2 mt-2">
+                                        {quickAttendees.map(name => (
+                                            <button key={name} onClick={() => addAttendee(name)} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold border border-blue-100">+ {name}</button>
+                                        ))}
+                                    </div>
+                                </div>
 
-    fetchWithRetry();
-  };
+                                <div className="mb-6">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase">討論主題 (Theme)</label>
+                                    <textarea value={theme} onChange={e => setTheme(e.target.value)} className="w-full h-32 p-3 border rounded-xl text-sm mt-1 resize-none bg-white" />
+                                </div>
 
-  // 匯出 Word
-  const exportToWord = () => {
-    if (!aiResult) return;
-    const htmlContent = marked.parse(aiResult);
-    const docTemplate = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><style>
-        body { font-family: "標楷體", "PMingLiU", serif; line-height: 1.5; padding: 40px; }
-        table { border-collapse: collapse; width: 100%; border: 1px solid black; margin: 10px 0; }
-        th, td { border: 1px solid black; padding: 6px; font-size: 11pt; text-align: left; }
-        h1 { text-align: center; color: #cc0000; font-size: 24pt; border-bottom: 2px solid #cc0000; }
-        .footer { font-size: 9pt; text-align: center; margin-top: 30px; border-top: 1px solid #ccc; }
-      </style></head>
-      <body>
-        <h1>Standard Chem & Pharm Co., Ltd.</h1>
-        <h2 style="text-align:center">正式會議紀錄簽報</h2>
-        <div style="margin-bottom: 20px;">
-          <p>會議日期：${date}</p>
-          <p>會議地點：${location}</p>
-          <p>與會人員：${attendees}</p>
-        </div>
-        <hr>
-        <div>${htmlContent}</div>
-        <div class="footer">生達化學製藥股份有限公司 - 營二部專用自動化系統</div>
-      </body></html>`;
+                                <div className="border-t pt-4">
+                                    <div className="flex justify-between items-center mb-4 text-sm font-bold">
+                                        <span>報告明細匯入</span>
+                                        <button onClick={() => setReports([...reports, { id: Date.now(), group: "", name: "", content: "", files: [] }])} className="text-blue-600">+ 新增人員</button>
+                                    </div>
+                                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+                                        {reports.map(r => (
+                                            <div key={r.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 relative">
+                                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                                    <input placeholder="組別 (業一A)" value={r.group} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, group: e.target.value} : rep))} className="p-2 text-xs border rounded bg-white" />
+                                                    <input placeholder="姓名" value={r.name} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, name: e.target.value} : rep))} className="p-2 text-xs border rounded bg-white font-bold" />
+                                                </div>
+                                                <label className="inline-block bg-white border border-slate-200 px-2 py-1 rounded text-[9px] font-bold cursor-pointer mb-2">
+                                                    📎 附件上傳
+                                                    <input type="file" multiple className="hidden" onChange={(e) => handleFileChange(e, r.id)} />
+                                                </label>
+                                                <span className="text-[9px] text-blue-500 ml-2 italic">{r.files?.length > 0 ? `${r.files.length} 檔案` : "無"}</span>
+                                                <textarea placeholder="輸入該員報告細節..." value={r.content} onChange={e => setReports(reports.map(rep => rep.id === r.id ? {...rep, content: e.target.value} : rep))} className="w-full h-20 p-2 text-xs border rounded bg-white resize-none" />
+                                                {reports.length > 1 && <button onClick={() => setReports(reports.filter(rep => rep.id !== r.id))} className="absolute top-1 right-1 text-slate-300 text-xs hover:text-red-500">✕</button>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
 
-    const blob = new Blob([docTemplate], { type: 'application/msword' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `生達會議紀錄_${theme.slice(0, 10)}.doc`;
-    link.click();
-  };
+                                <button onClick={generateMinutes} disabled={isGenerating} className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl mt-6 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                                    {isGenerating ? "正在彙整主題數據..." : "🚀 啟動 AI 主題分類彙整"}
+                                </button>
+                            </div>
+                        </div>
 
-  return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-800 p-4 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* 頁首 */}
-        <header className="flex flex-col md:flex-row md:items-end justify-between mb-8 pb-4 border-b-2 border-blue-900">
-          <div>
-            <h1 className="text-3xl font-black text-blue-900 flex items-center gap-2">
-              <Zap className="fill-blue-900" size={32} />
-              生達會議紀錄自動彙整系統
-            </h1>
-            <p className="text-slate-500 font-bold mt-1 tracking-widest uppercase text-xs">
-              Standard Chem & Pharm • Integrated Meeting Solution v2.6
-            </p>
-          </div>
-          <div className="mt-4 md:mt-0 flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-full text-blue-700 font-bold text-sm">
-            <CheckCircle size={16} /> 114 年正式會議範本同步中
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* 左側輸入欄 */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-6 space-y-5 transition-all hover:shadow-2xl">
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
-                    <Calendar size={12} /> 會議日期
-                  </label>
-                  <input 
-                    type="date" 
-                    value={date} 
-                    onChange={e => setDate(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
-                    <MapPin size={12} /> 會議地點
-                  </label>
-                  <input 
-                    value={location} 
-                    onChange={e => setLocation(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
-                  <Users size={12} /> 與會人員
-                </label>
-                <input 
-                  value={attendees} 
-                  onChange={e => setAttendees(e.target.value)}
-                  placeholder="輸入人員姓名..."
-                  className="w-full p-2.5 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
-                />
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <span className="text-[10px] text-slate-400 font-bold self-center">快速添加：</span>
-                  {quickAttendees.map(name => (
-                    <button 
-                      key={name}
-                      onClick={() => addAttendee(name)}
-                      className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[11px] font-bold text-slate-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors shadow-sm"
-                    >
-                      + {name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
-                  <FileText size={12} /> 會議主題 (對應藥品進藥追蹤事項)
-                </label>
-                <textarea 
-                  value={theme} 
-                  onChange={e => setTheme(e.target.value)}
-                  placeholder="1. 114年進藥進度追蹤&#10;2. 增量分析規劃..."
-                  className="w-full h-24 p-3 border rounded-xl bg-white focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none shadow-inner"
-                />
-              </div>
-
-              <div className="border-t pt-4">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-black text-slate-800 flex items-center gap-2">
-                    <FileText size={18} className="text-blue-600" />
-                    業務報告明細
-                  </h3>
-                  <button 
-                    onClick={() => setReports([...reports, { id: Date.now(), group: "", name: "", content: "", files: [] }])}
-                    className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
-                  >
-                    <Plus size={18} />
-                  </button>
-                </div>
-
-                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
-                  {reports.map((r) => (
-                    <div key={r.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 relative group animate-in fade-in slide-in-from-bottom-2">
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <input 
-                          placeholder="組別 (如: 營二部)" 
-                          value={r.group} 
-                          onChange={e => setReports(reports.map(rep => rep.id === r.id ? { ...rep, group: e.target.value } : rep))}
-                          className="p-2 text-xs border rounded-lg bg-white"
-                        />
-                        <input 
-                          placeholder="姓名" 
-                          value={r.name} 
-                          onChange={e => setReports(reports.map(rep => rep.id === r.id ? { ...rep, name: e.target.value } : rep))}
-                          className="p-2 text-xs border rounded-lg bg-white font-bold"
-                        />
-                      </div>
-
-                      <div className="mb-3 flex items-center gap-3">
-                        <label className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-100 transition shadow-sm text-[10px] font-black text-slate-600">
-                          <Paperclip size={12} /> 附件上傳
-                          <input 
-                            type="file" 
-                            multiple 
-                            className="hidden" 
-                            onChange={(e) => handleFileChange(e, r.id)}
-                          />
-                        </label>
-                        <span className="text-[10px] text-blue-600 font-bold italic truncate flex-1">
-                          {r.files?.length > 0 ? `${r.files.length} 個附件: ${r.files[0]}` : "尚未上傳"}
-                        </span>
-                      </div>
-
-                      <textarea 
-                        placeholder="輸入藥品進度、醫院名、具體數據回報..." 
-                        value={r.content} 
-                        onChange={e => setReports(reports.map(rep => rep.id === r.id ? { ...rep, content: e.target.value } : rep))}
-                        className="w-full h-24 p-3 text-xs border rounded-xl bg-white resize-none outline-none focus:ring-1 focus:ring-blue-400"
-                      />
-
-                      {reports.length > 1 && (
-                        <button 
-                          onClick={() => setReports(reports.filter(rep => rep.id !== r.id))}
-                          className="absolute -top-2 -right-2 bg-white border shadow-md text-slate-300 p-1.5 rounded-full hover:text-red-500 hover:border-red-200 transition"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
+                        {/* 右側結果區 */}
+                        <div className="lg:col-span-7 flex flex-col h-[850px]">
+                            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 flex flex-col h-full overflow-hidden">
+                                <div className="px-8 py-4 bg-slate-50 border-b flex justify-between items-center">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Official Record Preview</span>
+                                    <button onClick={exportWord} disabled={!aiResult} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-md transition-all">
+                                        匯出正式 Word
+                                    </button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-10 bg-white no-scrollbar">
+                                    {aiResult ? (
+                                        <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(aiResult) }} />
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-slate-200 italic font-bold">等待數據輸入並彙整...</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                  ))}
                 </div>
-              </div>
+            );
+        };
 
-              <button 
-                onClick={generateMeetingMinutes}
-                disabled={isGenerating}
-                className="w-full py-4 bg-blue-900 text-white font-black text-lg rounded-2xl shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
-              >
-                {isGenerating ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Zap className="group-hover:animate-pulse" size={20} />
-                )}
-                {isGenerating ? "AI 正在分析生達會議數據..." : "立即啟動 AI 會議彙整"}
-              </button>
-            </div>
-          </div>
-
-          {/* 右側結果欄 */}
-          <div className="lg:col-span-7 h-[850px] flex flex-col">
-            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 flex flex-col h-full overflow-hidden">
-              <div className="px-6 py-4 bg-slate-50 border-b flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="font-black text-slate-700 text-sm italic uppercase tracking-wider">Official Document Preview</span>
-                </div>
-                <button 
-                  onClick={exportToWord}
-                  disabled={!aiResult}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-black shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <FileDown size={16} /> 產出生達正式 Word 文檔
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 bg-white no-scrollbar">
-                {aiResult ? (
-                  <article className="markdown-body prose prose-slate max-w-none prose-sm">
-                    <div dangerouslySetInnerHTML={{ __html: marked.parse(aiResult) }} />
-                  </article>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-200 space-y-4">
-                    <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center border-2 border-dashed border-slate-100">
-                      <FileText size={48} />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-black italic text-lg text-slate-300">等待 AI 分析與彙整...</p>
-                      <p className="text-xs text-slate-200 mt-1">請完成左側資訊填寫後點擊按鈕</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default App;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
