@@ -1,205 +1,63 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>藥事公文級會議紀錄系統</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-    <style>
-        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background-color: #f8fafc; }
+/* 請在 index.html 找到 <aside> 到 </aside> 之間的部分進行替換 */
+<aside className="lg:col-span-5 space-y-6">
+    {/* 1. 會議基本資訊 */}
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">發文單位 (公司名稱)</label>
+        <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none" />
         
-        /* 預覽區 Markdown 樣式優化 */
-        .markdown-body { line-height: 1.8; color: #334155; }
-        .markdown-body h1 { font-size: 1.6rem; border-left: 6px solid #1e40af; padding-left: 12px; margin: 24px 0 16px; color: #1e3a8a; }
-        .markdown-body h2 { font-size: 1.3rem; font-weight: bold; margin: 20px 0 12px; color: #1e40af; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
-        .markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: white; }
-        .markdown-body th, .markdown-body td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
-        .markdown-body th { background-color: #f1f5f9; font-weight: 600; }
-        .markdown-body ul { list-style: disc; margin-left: 24px; margin-bottom: 16px; }
+        <label className="block text-sm font-semibold text-slate-700 mb-2">會議主題</label>
+        <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="如：Q1業績檢討" className="w-full p-2 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none" />
         
-        /* 隱藏滾動條但保持功能 */
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+        <label className="block text-sm font-semibold text-slate-700 mb-2">會議日期</label>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border rounded-lg mb-4" />
+    </div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+    {/* 2. 業務報告與檔案上傳 (這就是你漏掉的部分) */}
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex justify-between items-center mb-4 border-b pb-2">
+            <h2 className="font-bold text-slate-800">業務報告與附件</h2>
+            <button onClick={() => setReports([...reports, { id: Date.now(), name: "", content: "", files: [] }])} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-md hover:bg-blue-100 transition">
+                + 新增業務員
+            </button>
+        </div>
 
-        // 圖示組件略 (保持原樣或精簡)
-        const IconSparkles = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>;
-
-        const App = () => {
-            const [theme, setTheme] = useState("");
-            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-            const [companyName, setCompanyName] = useState("Standard Chem & Pharm Co., Ltd."); // 預設公司名
-            const [reports, setReports] = useState([{ id: Date.now(), name: "", content: "", files: [] }]);
-            const [summary, setSummary] = useState("");
-            const [isGenerating, setIsGenerating] = useState(false);
-            const [errorMsg, setErrorMsg] = useState("");
-            
-            const previewEndRef = useRef(null);
-
-            // 自動捲動到預覽底部
-            useEffect(() => {
-                if (summary) previewEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            }, [summary]);
-
-            const handleGenerateSummary = async () => {
-                if (!theme) { setErrorMsg("請填寫會議主題"); return; }
-                const apiKey = prompt("請輸入您的 Gemini API Key (僅供本次瀏覽器執行使用):");
-                if (!apiKey) return;
-
-                setIsGenerating(true);
-                setErrorMsg("");
-                
-                // 組合 Prompt 邏輯優化
-                const validReports = reports.filter(r => r.name || r.content || r.files.length > 0);
-                const allParts = [{ text: `你是一位專業的藥廠特助。請將以下會議內容整理為一份標準、正式的公文式會議紀錄。
-                    要求：
-                    1. 標題要莊重。
-                    2. 必須包含「會議概述」、「各區業務執行概況表」、「決議事項」與「待辦清單」。
-                    3. 語言必須專業，使用醫藥業務術語（如：醫學中心進藥、競品動態、QoQ成長等）。
-                    4. 若有數據請嘗試以 Markdown 表格呈現。
+        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+            {reports.map((report) => (
+                <div key={report.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 relative">
+                    <input 
+                        placeholder="業務姓名" 
+                        value={report.name} 
+                        onChange={(e) => setReports(reports.map(r => r.id === report.id ? {...r, name: e.target.value} : r))}
+                        className="w-full mb-2 p-1.5 text-sm border rounded bg-white"
+                    />
                     
-                    會議主題：${theme}
-                    會議日期：${date}
-                    公司：${companyName}
-                    內容詳情：\n` }];
-
-                validReports.forEach(r => {
-                    allParts.push({ text: `\n[業務員: ${r.name}]\n內容: ${r.content}\n` });
-                    r.files.forEach(f => {
-                        if (f.type === 'text') allParts.push({ text: `[附件內容 - ${f.name}]:\n${f.data}\n` });
-                        if (f.type === 'inline') allParts.push({ inlineData: { mimeType: f.mimeType, data: f.data }});
-                    });
-                });
-
-                try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: allParts }] })
-                    });
-                    const data = await response.json();
-                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) setSummary(text);
-                    else throw new Error("API 回傳格式異常");
-                } catch (e) {
-                    setErrorMsg("生成失敗: " + e.message);
-                } finally {
-                    setIsGenerating(false);
-                }
-            };
-
-            const exportToWord = () => {
-                if (!summary) return;
-                const htmlContent = marked.parse(summary);
-                
-                // 正式公文 HTML 模板
-                const docTemplate = `
-                    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-                    <head><meta charset='utf-8'>
-                    <style>
-                        @page { size: A4; margin: 2.5cm; }
-                        body { font-family: "標楷體", "KaiTi", serif; line-height: 1.5; }
-                        .official-header { text-align: center; color: red; font-size: 24pt; font-weight: bold; margin-bottom: 5pt; }
-                        .official-sub { text-align: center; color: red; font-size: 16pt; text-decoration: underline; margin-bottom: 20pt; }
-                        .info-grid { width: 100%; margin-bottom: 20pt; border-bottom: 2px solid black; padding-bottom: 10pt; }
-                        .info-item { font-size: 12pt; }
-                        table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
-                        th, td { border: 1px solid black; padding: 8pt; font-size: 11pt; }
-                        h1, h2 { font-size: 14pt; margin-top: 15pt; }
-                    </style>
-                    </head>
-                    <body>
-                        <div class="official-header">${companyName}</div>
-                        <div class="official-sub">會議紀錄簽報</div>
-                        <table class="info-grid">
-                            <tr>
-                                <td style="border:none" class="info-item">發文日期：${date}</td>
-                                <td style="border:none; text-align:right" class="info-item">速別：最速件</td>
-                            </tr>
-                            <tr>
-                                <td style="border:none" class="info-item">發文字號：標藥字第 ${new Date().getFullYear()}${Math.floor(Math.random()*1000)} 號</td>
-                                <td style="border:none; text-align:right" class="info-item">密等：普通</td>
-                            </tr>
-                        </table>
-                        <div class="content">${htmlContent}</div>
-                        <div style="margin-top: 50pt">
-                            <p>承辦人：____________ &nbsp;&nbsp;&nbsp;&nbsp; 主管核章：____________</p>
-                        </div>
-                    </body></html>`;
-
-                const blob = new Blob([docTemplate], { type: 'application/msword' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = `會議紀錄_${theme}.doc`;
-                link.click();
-            };
-
-            // 保持原本的 UI 結構並進行微調... (為簡潔，以下列出核心 UI 變動)
-            return (
-                <div className="max-w-7xl mx-auto p-4 md:p-8">
-                    <header className="mb-8 text-center">
-                        <h1 className="text-3xl font-extrabold text-blue-900 mb-2">藥事會議紀錄彙整系統 v2.0</h1>
-                        <p className="text-slate-500">標準公文排版 • 附件自動解析 • Gemini AI 驅動</p>
-                    </header>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        {/* 左側輸入區 (可參考原程式碼) */}
-                        <aside className="lg:col-span-5 space-y-4">
-                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">發文單位 (公司名稱)</label>
-                                <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none" />
-                                
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">會議主題</label>
-                                <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="如：Q1業績檢討" className="w-full p-2 border rounded-lg mb-4" />
-                                
-                                <button onClick={handleGenerateSummary} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
-                                    {isGenerating ? "處理中..." : <><IconSparkles /> 產生公文級紀錄</>}
-                                </button>
-                            </div>
-                            
-                            {/* 業務報告列表... 同原程式碼邏輯 */}
-                        </aside>
-
-                        {/* 右側預覽與匯出 */}
-                        <main className="lg:col-span-7 flex flex-col h-[calc(100vh-200px)]">
-                            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 flex flex-col overflow-hidden">
-                                <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                                    <span className="font-bold text-slate-700">公文預覽 (標楷體樣式)</span>
-                                    <button onClick={exportToWord} disabled={!summary} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition disabled:opacity-50">
-                                        匯出正式 Word 檔
-                                    </button>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-8 bg-white no-scrollbar">
-                                    {summary ? (
-                                        <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(summary) }} />
-                                    ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300">
-                                            <p>等待 AI 生成正式紀錄...</p>
-                                        </div>
-                                    )}
-                                    <div ref={previewEndRef} />
-                                </div>
-                            </div>
-                        </main>
+                    {/* 檔案上傳按鈕 */}
+                    <div className="flex items-center gap-2 mb-2">
+                        <label className="cursor-pointer bg-white border border-slate-300 text-[10px] px-2 py-1 rounded hover:bg-slate-50 transition">
+                            📎 上傳附件 (PDF/Excel)
+                            <input 
+                                type="file" 
+                                className="hidden" 
+                                multiple 
+                                onChange={(e) => handleFileUpload(e, report.id)} 
+                            />
+                        </label>
+                        <span className="text-[10px] text-slate-400">{report.files?.length || 0} 個檔案</span>
                     </div>
-                </div>
-            );
-        };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                    <textarea 
+                        placeholder="手寫報告補充..." 
+                        value={report.content}
+                        onChange={(e) => setReports(reports.map(r => r.id === report.id ? {...r, content: e.target.value} : r))}
+                        className="w-full h-20 p-2 text-xs border rounded bg-white resize-none"
+                    ></textarea>
+                </div>
+            ))}
+        </div>
+    </div>
+
+    {/* 3. 執行按鈕 */}
+    <button onClick={handleGenerateSummary} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition flex items-center justify-center gap-2">
+        {isGenerating ? "AI 正在分析數據與排版..." : <><IconSparkles /> 產生公文級會議紀錄</>}
+    </button>
+</aside>
